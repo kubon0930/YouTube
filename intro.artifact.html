@@ -62,13 +62,14 @@
   // ---------- fish program (normal-mapped relief, yaw + undulation) ----------
   const fishVS=`
     attribute vec2 aUV; varying vec2 vUV;
-    uniform float uT,uYaw,uCamD,uFold,uDorU0,uDorU1,uBaseV; uniform vec2 uCenter,uSize;
+    uniform float uT,uYaw,uCamD,uFold,uDorU0,uDorU1,uBaseV0,uBaseV1; uniform vec2 uCenter,uSize;
     void main(){ vUV=aUV;
       float u=aUV.x, v=aUV.y;
-      // first-dorsal fold: collapse the fin band toward the back groove when running straight (uFold=0 folded,1 erect)
-      float band=smoothstep(uDorU0-0.02,uDorU0+0.015,u)*(1.0-smoothstep(uDorU1-0.015,uDorU1+0.02,u));
-      float fin=step(v,uBaseV);
-      float vf=mix(uBaseV, v, uFold);
+      // first-dorsal fold: collapse only the fin (above the sloped back ridge) into the groove; body line stays intact
+      float bl=mix(uBaseV0,uBaseV1, clamp((u-uDorU0)/(uDorU1-uDorU0),0.0,1.0));
+      float band=smoothstep(uDorU0-0.02,uDorU0+0.012,u)*(1.0-smoothstep(uDorU1-0.012,uDorU1+0.02,u));
+      float fin=step(v,bl);
+      float vf=mix(bl, v, uFold);
       v=mix(v, mix(v,vf,band), fin);
       float lx=u-0.5, ly=v-0.5;
       float wave=sin(u*5.5-uT*4.6)*0.05*smoothstep(0.15,1.0,u);
@@ -130,7 +131,7 @@
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(uvs),gl.STATIC_DRAW);
   const MESHN=uvs.length/2;
   const f_aUV=gl.getAttribLocation(fishP,'aUV');
-  const f_u={}; ['uT','uYaw','uCamD','uCenter','uSize','uColor','uAlpha','uNormal','uRes','uNear','uFade','uFold','uDorU0','uDorU1','uBaseV']
+  const f_u={}; ['uT','uYaw','uCamD','uCenter','uSize','uColor','uAlpha','uNormal','uRes','uNear','uFade','uFold','uDorU0','uDorU1','uBaseV0','uBaseV1']
     .forEach(n=>f_u[n]=gl.getUniformLocation(fishP,n));
 
   // textures
@@ -181,7 +182,8 @@
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
     gl.bindBuffer(gl.ARRAY_BUFFER,meshBuf); gl.enableVertexAttribArray(f_aUV); gl.vertexAttribPointer(f_aUV,2,gl.FLOAT,false,0,0);
     gl.uniform1i(f_u.uColor,0); gl.uniform1i(f_u.uAlpha,1); gl.uniform1i(f_u.uNormal,2);
-    gl.uniform1f(f_u.uFold,fold); gl.uniform1f(f_u.uDorU0,0.263); gl.uniform1f(f_u.uDorU1,0.404); gl.uniform1f(f_u.uBaseV,0.205);
+    gl.uniform1f(f_u.uFold,fold); gl.uniform1f(f_u.uDorU0,0.263); gl.uniform1f(f_u.uDorU1,0.404);
+    gl.uniform1f(f_u.uBaseV0,0.200); gl.uniform1f(f_u.uBaseV1,0.150);
     gl.uniform1f(f_u.uT,t); gl.uniform1f(f_u.uYaw,yaw); gl.uniform1f(f_u.uCamD,2.6);
     gl.uniform2f(f_u.uCenter, cx/W*2-1, -(cy/H*2-1));
     gl.uniform2f(f_u.uSize, dw/W*2, dh/H*2);
