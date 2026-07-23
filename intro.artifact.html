@@ -38,7 +38,7 @@
   const FS = `
   precision highp float;
   uniform vec2 uRes; uniform float uT;
-  const float S = 0.62;
+  const float S = 0.56;
 
   mat2 rot(float a){ float c=cos(a),s=sin(a); return mat2(c,-s,s,c); }
   float smin(float a,float b,float k){ float h=clamp(0.5+0.5*(b-a)/k,0.,1.); return mix(b,a,h)-k*h*(1.-h); }
@@ -55,41 +55,55 @@
     return clamp(pow(abs(c), 8.0), 0.0, 1.0);
   }
 
-  float sph(vec3 p, vec3 c, float r){ vec3 d=p-c; d.z/=0.58; return length(d)-r; }
+  // deep fusiform body. radii = half-height; z compressed for a round-but-tall section.
+  float sph(vec3 p, vec3 c, float r){ vec3 d=p-c; d.z/=0.70; return length(d)-r; }
   float sdSeg(vec2 p, vec2 a, vec2 b){ vec2 pa=p-a, ba=b-a; float h=clamp(dot(pa,ba)/dot(ba,ba),0.,1.); return length(pa-ba*h); }
+  // tapered lobe: capsule with width wa at a, wb at b
+  float lobe(vec2 p, vec2 a, vec2 b, float wa, float wb){
+    vec2 pa=p-a, ba=b-a; float h=clamp(dot(pa,ba)/dot(ba,ba),0.,1.);
+    return length(pa-ba*h) - mix(wa,wb,h);
+  }
   float bodySDF(vec3 p){
-    float k=0.19;
-    float d = sph(p, vec3(1.12,0.0,0.0), 0.045);
-    d = smin(d, sph(p, vec3(0.88,0.0,0.0),0.13), k);
-    d = smin(d, sph(p, vec3(0.60,-0.01,0.0),0.195), k);
-    d = smin(d, sph(p, vec3(0.30,-0.01,0.0),0.238), k);
-    d = smin(d, sph(p, vec3(-0.02,0.0,0.0),0.245), k);
-    d = smin(d, sph(p, vec3(-0.36,0.0,0.0),0.215), k);
-    d = smin(d, sph(p, vec3(-0.66,0.0,0.0),0.155), k);
-    d = smin(d, sph(p, vec3(-0.92,0.0,0.0),0.095), k);
-    d = smin(d, sph(p, vec3(-1.12,0.0,0.0),0.05), k);
+    float k=0.16;
+    float d = sph(p, vec3(1.20, 0.02,0.0), 0.05);   // snout
+    d = smin(d, sph(p, vec3(1.00,-0.01,0.0),0.17), k);
+    d = smin(d, sph(p, vec3(0.74,-0.03,0.0),0.30), k);
+    d = smin(d, sph(p, vec3(0.44,-0.03,0.0),0.39), k);   // shoulder (deepest, forward of center)
+    d = smin(d, sph(p, vec3(0.10,-0.02,0.0),0.42), k);   // max depth
+    d = smin(d, sph(p, vec3(-0.24,0.0,0.0),0.38), k);
+    d = smin(d, sph(p, vec3(-0.54,0.02,0.0),0.28), k);
+    d = smin(d, sph(p, vec3(-0.80,0.03,0.0),0.165), k);
+    d = smin(d, sph(p, vec3(-1.02,0.03,0.0),0.075), k);  // slender caudal peduncle
+    d = smin(d, sph(p, vec3(-1.18,0.03,0.0),0.045), k);
     return d;
   }
   // fins-only SDF (for material split)
   float finsSDF(vec3 p){
-    // forked caudal tail, attached at peduncle (local x ~ -1.05)
-    float th = abs(p.z) - 0.02;
-    float up = sdSeg(p.xy, vec2(-1.02,0.0), vec2(-1.62, 0.52)) - 0.055;
-    float lo = sdSeg(p.xy, vec2(-1.02,0.0), vec2(-1.62,-0.52)) - 0.055;
-    float tail = max(min(up,lo), th);
-    // first dorsal fin
-    vec3 d1 = p - vec3(0.02,0.24,0.0);
-    float dtri = max(d1.y*0.9 + abs(d1.x)*1.9 - 0.10, -d1.y-0.17);
-    float dorsal = max(dtri, abs(p.z)-0.013);
-    // anal fin (bottom rear)
-    vec3 a1 = p - vec3(-0.42,-0.22,0.0);
-    float atri = max(-a1.y*1.1 + abs(a1.x)*2.3 - 0.04, a1.y-0.11);
-    float anal = max(atri, abs(p.z)-0.012);
-    // pectoral fins (both sides), small, hugging body
-    vec3 pf = vec3(p.x-0.34, p.y+0.05, abs(p.z)-0.12);
-    float ptri = max(pf.x*2.3 + abs(pf.y)*2.0 - 0.01, -pf.x-0.16);
-    float pect = max(ptri, abs(pf.z)-0.014);
-    return min(min(min(tail, dorsal), anal), pect);
+    // ── lunate caudal tail ── two wide tapered lobes, attached at peduncle, swept back
+    vec2 base = vec2(-1.06, 0.03);
+    float tail2d = min(lobe(p.xy, base, vec2(-1.62, 0.62), 0.15, 0.02),
+                       lobe(p.xy, base, vec2(-1.62,-0.56), 0.15, 0.02));
+    float tail = max(tail2d, abs(p.z) - 0.028);
+
+    // ── first dorsal fin (tall, falcate) ──
+    float dorsal = max(lobe(p.xy, vec2(0.30,0.30), vec2(0.06,0.62), 0.11, 0.015), abs(p.z)-0.014);
+    // ── second dorsal fin (falcate, rear back) ──
+    float dor2   = max(lobe(p.xy, vec2(-0.34,0.28), vec2(-0.60,0.52), 0.09, 0.012), abs(p.z)-0.012);
+    // ── anal fin (falcate, rear belly) ──
+    float anal   = max(lobe(p.xy, vec2(-0.44,-0.26), vec2(-0.68,-0.48), 0.09, 0.012), abs(p.z)-0.012);
+    // ── pectoral fins (both sides), swept back and down ──
+    float pect   = max(lobe(p.xy, vec2(0.34,-0.06), vec2(-0.04,-0.32), 0.10, 0.02), abs(abs(p.z)-0.15)-0.013);
+
+    // ── finlets (signature sawtooth row toward the tail) ──
+    float fin = 1e9;
+    for(int i=0;i<4;i++){
+      float fx = -0.60 - float(i)*0.125;
+      float yt = 0.30 - float(i)*0.062;      // follows the tapering back
+      fin = min(fin, max(lobe(p.xy, vec2(fx,yt), vec2(fx-0.05,yt+0.05), 0.028,0.006), abs(p.z)-0.010));
+      fin = min(fin, max(lobe(p.xy, vec2(fx,-yt+0.06), vec2(fx-0.05,-yt+0.01), 0.028,0.006), abs(p.z)-0.010));
+    }
+
+    return min(min(min(min(min(tail, dorsal), dor2), anal), pect), fin);
   }
   float sdFish(vec3 p){ return min(bodySDF(p), finsSDF(p)); }
 
@@ -133,7 +147,7 @@
     vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / uRes.y;
 
     float prog = clamp((uT-0.3)/8.2, 0.0, 1.0);
-    fishPos = vec3(mix(3.6,-3.8, prog), -0.98 + 0.05*sin(uT*0.7), mix(-1.2,-2.2, prog));
+    fishPos = vec3(mix(3.6,-3.8, prog), -0.92 + 0.05*sin(uT*0.7), mix(-1.2,-2.3, prog));
     fishYaw = 0.30 + 0.05*sin(uT*0.6);
 
     vec3 ro = vec3(0.0, 0.05, 4.2);
@@ -144,12 +158,12 @@
     vec3 col = background(rd, uv);
 
     float t = 1.5, dmin = 1e9; bool hit=false;
-    for(int i=0;i<96;i++){
+    for(int i=0;i<130;i++){
       vec3 p = ro + rd*t;
       float d = mapFish(p);
       dmin = min(dmin, d);
-      if(d < 0.0025){ hit=true; break; }
-      t += d*0.9;
+      if(d < 0.0022){ hit=true; break; }
+      t += d*0.7;
       if(t > 8.5) break;
     }
 
@@ -164,13 +178,15 @@
       float ly = q.y;
       bool isFin = bodySDF(q) > 0.03;
 
-      // body: counter-shaded metallic (dark steel-blue back -> silver -> pale belly)
-      vec3 back  = vec3(0.09,0.20,0.33);
-      vec3 flank = vec3(0.44,0.56,0.63);
-      vec3 belly = vec3(0.82,0.87,0.90);
-      vec3 base = mix(belly, mix(flank, back, smoothstep(0.0,0.34,ly)), smoothstep(-0.28,0.16,ly));
-      // fins: uniform dark steel
-      if(isFin) base = vec3(0.12,0.22,0.34);
+      // body: counter-shaded metallic — dark blue-black back, silver belly, defined lateral line
+      vec3 back  = vec3(0.045,0.11,0.20);
+      vec3 flank = vec3(0.50,0.60,0.66);
+      vec3 belly = vec3(0.85,0.89,0.92);
+      vec3 base = mix(belly, mix(flank, back, smoothstep(0.06,0.40,ly)), smoothstep(-0.06,0.16,ly));
+      // subtle blue-green iridescence on the flank
+      base += vec3(-0.02,0.03,0.04) * (1.0-abs(ly*2.5)) * 0.5;
+      // fins: dark steel
+      if(isFin) base = vec3(0.09,0.18,0.29);
 
       float bc = caustic(p.xz*2.2 + vec2(0.0,uT*0.1));
       vec3 lit = base*(amb + diff*0.9) + vec3(0.25,0.5,0.7)*bc*diff*(isFin?0.2:0.45);
@@ -183,8 +199,8 @@
       lit += vec3(0.2,0.55,0.9)*fr*(isFin?0.9:0.6);
 
       // eye
-      float ed = length(vec3(q.x-0.82, q.y-0.05, abs(q.z)-0.11));
-      if(!isFin) lit = mix(vec3(0.02,0.02,0.04), lit, smoothstep(0.05,0.085,ed));
+      float ed = length(vec3(q.x-0.86, q.y+0.02, abs(q.z)-0.16));
+      if(!isFin) lit = mix(vec3(0.02,0.02,0.03), lit, smoothstep(0.045,0.075,ed));
 
       float fog = 1.0 - exp(-max(t-3.2,0.0)*0.13);
       lit = mix(lit, background(rd, uv), fog*0.5);
