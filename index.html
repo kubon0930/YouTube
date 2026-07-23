@@ -101,13 +101,17 @@
       vec3 V=vec3(0.0,0.0,1.0); vec3 R=reflect(-key,n);
       float spec=pow(clamp(dot(R,V),0.0,1.0),64.0)*1.35;   // glossy wet highlight
       float rim=pow(1.0-clamp(n.z,0.0,1.0),2.6);
-      float ao=0.62+0.38*clamp(n.z,0.0,1.0);               // crevices/edges deepen
-      vec3 base=texture2D(uColor,vUV).rgb*vec3(0.62,0.74,0.86);
+      float ao=0.64+0.36*clamp(n.z,0.0,1.0);               // crevices/edges deepen
+      // fresh-bluefin grade: bright silver-steel with a touch of blue-green iridescence
+      vec3 skin=texture2D(uColor,vUV).rgb;
+      vec3 base=skin*vec3(0.70,0.80,0.90);
+      float irid=pow(1.0-clamp(n.z,0.0,1.0),1.4);
+      base+=vec3(-0.03,0.05,0.08)*irid*0.7;
       vec2 suv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;
       float ca=caustic(suv*2.2+vec2(0.0,uT*0.08));
-      vec3 col=base*(0.28+0.90*diff)*ao + vec3(0.9,0.96,1.0)*spec + vec3(0.2,0.5,0.85)*rim*0.6;
-      col+=vec3(0.25,0.55,0.8)*ca*d1*0.42;
-      col=mix(col, vec3(0.10,0.30,0.44), (1.0-uNear)*0.36);
+      vec3 col=base*(0.36+0.86*diff)*ao + vec3(0.92,0.97,1.0)*spec + vec3(0.25,0.55,0.9)*rim*0.55;
+      col+=vec3(0.28,0.6,0.9)*ca*d1*0.42;
+      col=mix(col, vec3(0.11,0.31,0.45), (1.0-uNear)*0.34);
       gl_FragColor=vec4(col, a*uFade); }`;
 
   function mkProg(vs,fs){ const c=(t,s)=>{const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);
