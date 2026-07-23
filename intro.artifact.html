@@ -120,43 +120,57 @@
 
   function drawTuna(t){
     if(!buildTuna()) return;
-    const prog=clamp01((t-0.2)/8.6);
-    const dw=W*0.54, dh=dw*tunaH/tunaW;
-    const cx=W*1.18 + (W*(-0.18)-W*1.18)*prog;         // glide right -> left
-    const cy=H*0.52 + Math.sin(t*0.8)*12;               // gentle bob
-    const a=Math.min(smooth(-dw*0.55,-dw*0.15,cx-W), 1) * smooth(-0.1,0.12,prog) * (1-smooth(0.9,1.0,prog));
-    const alpha=clamp01(Math.min(smooth(W+dw*0.6, W+dw*0.1, cx), smooth(-dw*0.6,-dw*0.1, cx)) );
+    const prog=clamp01((t-0.2)/8.8);
+    // depth traversal: emerge from the deep (far, small, hazy) -> approach camera (near, large, sharp)
+    const near = smooth(0.0,1.0,prog);                  // 0 far .. 1 near
+    const dw = W*(0.30 + 0.42*near), dh = dw*tunaH/tunaW;
+    // curved swim path: enters lower-right, arcs up behind the logo, exits upper-left
+    const cx = W*1.16 + (W*(-0.16)-W*1.16)*prog;
+    const cy = H*0.60 - Math.sin(prog*Math.PI)*H*0.15 + Math.sin(t*0.8)*10*near;
+    // bank angle follows the path tangent (nose leads left)
+    const angle = 0.14*Math.cos(prog*Math.PI);
+    // pseudo-perspective turn: one end tips into depth, easing through the pass
+    const turn = 0.20*Math.sin(prog*Math.PI + 0.5);
+    const alpha = clamp01(Math.min(smooth(W+dw*0.6, W+dw*0.05, cx), smooth(-dw*0.6,-dw*0.05, cx)));
 
-    const padX=30, padY=44;
+    const padX=40, padY=Math.ceil(dh*0.22)+20;
     const bw=Math.ceil(dw)+padX*2, bh=Math.ceil(dh)+padY*2;
     if(fbuf.width!==bw||fbuf.height!==bh){ fbuf.width=bw; fbuf.height=bh; }
     fbx.clearRect(0,0,bw,bh);
-    // swim undulation: vertical strips, amplitude grows toward tail (right)
-    const strips=56, ssrc=tunaW/strips, sdst=dw/strips;
+    // swim undulation (traveling wave, larger toward tail) + per-strip depth-tip
+    const strips=60, ssrc=tunaW/strips, sdst=dw/strips;
     for(let i=0;i<strips;i++){
       const sx=i/strips;                                // 0 head(left) .. 1 tail(right)
-      const amp=13*smooth(0.15,1.0,sx);
+      const amp=(dh*0.055)*smooth(0.15,1.0,sx);
       const dy=amp*Math.sin(sx*5.5 - t*4.6);
-      fbx.drawImage(tuna, i*ssrc,0,ssrc,tunaH, padX+i*sdst, padY+dy, sdst+1, dh);
+      const syc=1.0 + turn*(sx-0.5);                    // taller at one end -> body angled in depth
+      const sh_=dh*syc, yoff=padY+dy+(dh-sh_)*0.5;
+      fbx.drawImage(tuna, i*ssrc,0,ssrc,tunaH, padX+i*sdst, yoff, sdst+1, sh_);
     }
-    // light playing on the body (clipped to fish via source-atop)
+    // light playing on the body + depth haze (clipped to fish via source-atop)
     fbx.globalCompositeOperation='source-atop';
     for(let k=0;k<3;k++){
       const hx=padX + ((t*70 + k*430) % (dw+300)) - 150;
       const hy=padY + dh*(0.22+0.24*k);
-      const g=fbx.createRadialGradient(hx,hy,0,hx,hy,190);
-      g.addColorStop(0,'rgba(190,225,255,0.15)'); g.addColorStop(1,'rgba(190,225,255,0)');
+      const g=fbx.createRadialGradient(hx,hy,0,hx,hy,dw*0.16);
+      g.addColorStop(0,'rgba(190,225,255,0.16)'); g.addColorStop(1,'rgba(190,225,255,0)');
       fbx.fillStyle=g; fbx.fillRect(0,0,bw,bh);
     }
     const rg=fbx.createLinearGradient(0,padY,0,padY+dh*0.42);
     rg.addColorStop(0,'rgba(150,200,255,0.13)'); rg.addColorStop(1,'rgba(150,200,255,0)');
     fbx.fillStyle=rg; fbx.fillRect(0,0,bw,bh);
+    // distance haze: blue veil when far
+    fbx.fillStyle=`rgba(24,86,140,${(0.5*(1-near)).toFixed(3)})`; fbx.fillRect(0,0,bw,bh);
     fbx.globalCompositeOperation='source-over';
 
-    ctx.save(); ctx.globalAlpha=alpha;
-    ctx.shadowColor='rgba(0,15,30,0.5)'; ctx.shadowBlur=40; ctx.shadowOffsetY=10;
-    ctx.drawImage(fbuf, cx-dw/2-padX, cy-dh/2-padY);
+    ctx.save();
+    ctx.globalAlpha=alpha;
+    ctx.translate(cx,cy); ctx.rotate(angle);
+    if(near<0.85) ctx.filter=`blur(${((1-near)*3.5).toFixed(2)}px)`;
+    ctx.shadowColor='rgba(0,14,28,0.45)'; ctx.shadowBlur=30*near+8; ctx.shadowOffsetX=-14*near; ctx.shadowOffsetY=16*near;
+    ctx.drawImage(fbuf, -dw/2-padX, -dh/2-padY);
     ctx.restore();
+    ctx.filter='none';
   }
 
   function tracked(text, cx, cy, size, spacing, color, alpha){
