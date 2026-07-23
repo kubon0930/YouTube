@@ -169,32 +169,44 @@
     const cx = W*1.16 + (W*(-0.16)-W*1.16)*prog;
     const cy = H*0.60 - Math.sin(prog*Math.PI)*H*0.15 + Math.sin(t*0.8)*10*near;
     // bank angle follows the path tangent (nose leads left)
-    const angle = 0.14*Math.cos(prog*Math.PI);
-    // pseudo-perspective turn: one end tips into depth, easing through the pass
-    const turn = 0.20*Math.sin(prog*Math.PI + 0.5);
+    const angle = 0.10*Math.cos(prog*Math.PI);
+    // YAW about the vertical axis: enters at a 3/4 front angle, swings broadside at the centre, turns away leaving
+    const yaw = 0.85*Math.cos(prog*Math.PI);
     const alpha = clamp01(Math.min(smooth(W+dw*0.6, W+dw*0.05, cx), smooth(-dw*0.6,-dw*0.05, cx)));
 
     // fins deploy while manoeuvring, fold flush into the body when running straight.
-    // brief deploy as it enters (turning in) and again as it banks to leave; folded through the fast centre pass.
     const g0=Math.exp(-Math.pow((prog-0.10)/0.06,2));   // entry turn (far)
     const g1=Math.exp(-Math.pow((prog-0.66)/0.11,2));   // bank-away (near, in frame)
     const spread = clamp01(Math.max(g0*0.85, g1));
     const pose = composePose(spread);
 
-    const padX=40, padY=Math.ceil(dh*0.22)+20;
+    const padX=Math.ceil(dw*0.18)+30, padY=Math.ceil(dh*0.34)+22;
     const bw=Math.ceil(dw)+padX*2, bh=Math.ceil(dh)+padY*2;
     if(fbuf.width!==bw||fbuf.height!==bh){ fbuf.width=bw; fbuf.height=bh; }
     fbx.clearRect(0,0,bw,bh);
-    // swim undulation (traveling wave, larger toward tail) + per-strip depth-tip
-    const strips=60, ssrc=tunaW/strips, sdst=dw/strips;
+    // perspective-projected strips along the body length => real foreshortening as it turns (yaw)
+    const strips=72, camD=2.6, sy=Math.sin(yaw), cyw=Math.cos(yaw);
+    const projX=u=>{ const mx=u-0.5, s=camD/(camD+mx*sy); return (0.5+mx*cyw*s)*dw; };
+    const projS=u=>{ const mx=u-0.5; return camD/(camD+mx*sy); };
     for(let i=0;i<strips;i++){
-      const sx=i/strips;                                // 0 head(left) .. 1 tail(right)
-      const amp=(dh*0.055)*smooth(0.15,1.0,sx);
-      const dy=amp*Math.sin(sx*5.5 - t*4.6);
-      const syc=1.0 + turn*(sx-0.5);                    // taller at one end -> body angled in depth
-      const sh_=dh*syc, yoff=padY+dy+(dh-sh_)*0.5;
-      fbx.drawImage(pose, i*ssrc,0,ssrc,tunaH, padX+i*sdst, yoff, sdst+1, sh_);
+      const u0=i/strips, u1=(i+1)/strips, um=(u0+u1)*0.5;
+      const x0=projX(u0), x1=projX(u1), s=projS(um);
+      const hh=dh*s;
+      const amp=(dh*0.05)*smooth(0.15,1.0,um)*s;
+      const dyw=amp*Math.sin(um*5.5 - t*4.6);
+      const yoff=padY + (dh-hh)*0.5 + dyw;
+      fbx.drawImage(pose, u0*tunaW,0,(u1-u0)*tunaW,tunaH, padX+x0, yoff, (x1-x0)+0.6, hh);
     }
+    // cross-section roundness: darken the dorsal & ventral edges, soft sheen on the flank
+    fbx.globalCompositeOperation='source-atop';
+    const vg=fbx.createLinearGradient(0,padY,0,padY+dh);
+    vg.addColorStop(0.00,'rgba(2,10,20,0.50)');
+    vg.addColorStop(0.15,'rgba(2,10,20,0.0)');
+    vg.addColorStop(0.42,'rgba(205,228,255,0.12)');
+    vg.addColorStop(0.66,'rgba(255,255,255,0.0)');
+    vg.addColorStop(1.00,'rgba(2,10,24,0.55)');
+    fbx.fillStyle=vg; fbx.fillRect(0,0,bw,bh);
+    fbx.globalCompositeOperation='source-over';
     // light playing on the body + depth haze (clipped to fish via source-atop)
     fbx.globalCompositeOperation='source-atop';
     for(let k=0;k<3;k++){
