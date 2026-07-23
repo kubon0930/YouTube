@@ -68,10 +68,16 @@
   // ---------- fish program (normal-mapped relief, yaw + undulation) ----------
   const fishVS=`
     attribute vec2 aUV; varying vec2 vUV;
-    uniform float uT,uYaw,uCamD; uniform vec2 uCenter,uSize;
+    uniform float uT,uYaw,uCamD,uFold,uDorU0,uDorU1,uBaseV; uniform vec2 uCenter,uSize;
     void main(){ vUV=aUV;
-      float lx=aUV.x-0.5, ly=aUV.y-0.5;
-      float wave=sin(aUV.x*5.5-uT*4.6)*0.05*smoothstep(0.15,1.0,aUV.x);
+      float u=aUV.x, v=aUV.y;
+      // first-dorsal fold: collapse the fin band toward the back groove when running straight (uFold=0 folded,1 erect)
+      float band=smoothstep(uDorU0-0.02,uDorU0+0.015,u)*(1.0-smoothstep(uDorU1-0.015,uDorU1+0.02,u));
+      float fin=step(v,uBaseV);
+      float vf=mix(uBaseV, v, uFold);
+      v=mix(v, mix(v,vf,band), fin);
+      float lx=u-0.5, ly=v-0.5;
+      float wave=sin(u*5.5-uT*4.6)*0.05*smoothstep(0.15,1.0,u);
       ly+=wave;
       float wz=lx*sin(uYaw); float s=uCamD/(uCamD+wz);
       float sx=lx*cos(uYaw)*s; float sy=ly*s;
@@ -117,7 +123,7 @@
 
   const fishP=mkProg(fishVS,fishFS);
   // grid mesh
-  const GX=56, GY=12; const uvs=[];
+  const GX=56, GY=22; const uvs=[];
   for(let y=0;y<GY;y++) for(let x=0;x<GX;x++){
     const u0=x/GX,u1=(x+1)/GX,v0=y/GY,v1=(y+1)/GY;
     uvs.push(u0,v0, u1,v0, u1,v1, u0,v0, u1,v1, u0,v1);
@@ -126,7 +132,7 @@
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(uvs),gl.STATIC_DRAW);
   const MESHN=uvs.length/2;
   const f_aUV=gl.getAttribLocation(fishP,'aUV');
-  const f_u={}; ['uT','uYaw','uCamD','uCenter','uSize','uColor','uAlpha','uNormal','uRes','uNear','uFade']
+  const f_u={}; ['uT','uYaw','uCamD','uCenter','uSize','uColor','uAlpha','uNormal','uRes','uNear','uFade','uFold','uDorU0','uDorU1','uBaseV']
     .forEach(n=>f_u[n]=gl.getUniformLocation(fishP,n));
 
   // textures
@@ -169,12 +175,15 @@
     const cx=W*1.16+(W*(-0.16)-W*1.16)*prog;
     const cy=H*0.55-Math.sin(prog*Math.PI)*H*0.12+Math.sin(t*0.8)*10*near;
     const yaw=0.85*Math.cos(prog*Math.PI);
+    // fins deploy while manoeuvring (turning), fold flush into the body when running straight
+    const fold=smooth(0.15,0.62,Math.abs(yaw));
     const fade=clamp01(Math.min(smooth(W+dw*0.6,W+dw*0.05,cx),smooth(-dw*0.6,-dw*0.05,cx)));
     if(fade<=0) return;
     gl.useProgram(fishP);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
     gl.bindBuffer(gl.ARRAY_BUFFER,meshBuf); gl.enableVertexAttribArray(f_aUV); gl.vertexAttribPointer(f_aUV,2,gl.FLOAT,false,0,0);
     gl.uniform1i(f_u.uColor,0); gl.uniform1i(f_u.uAlpha,1); gl.uniform1i(f_u.uNormal,2);
+    gl.uniform1f(f_u.uFold,fold); gl.uniform1f(f_u.uDorU0,0.263); gl.uniform1f(f_u.uDorU1,0.404); gl.uniform1f(f_u.uBaseV,0.205);
     gl.uniform1f(f_u.uT,t); gl.uniform1f(f_u.uYaw,yaw); gl.uniform1f(f_u.uCamD,2.6);
     gl.uniform2f(f_u.uCenter, cx/W*2-1, -(cy/H*2-1));
     gl.uniform2f(f_u.uSize, dw/W*2, dh/H*2);
